@@ -657,6 +657,12 @@ action_split_view_callback (GtkAction *action,
 		if (slot != NULL) {
 			nemo_view_update_menus (slot->content_view);
 		}
+
+		/* Persist the split view state immediately so it survives
+		 * across sessions even if the right pane has no savable tabs */
+		g_settings_set_boolean (nemo_window_state,
+					NEMO_WINDOW_STATE_SAVED_SPLIT_VIEW,
+					is_active);
 	}
 
     nemo_window_update_show_hide_ui_elements (window);

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for Nemo.
+
+  This makes Nemo discoverable as an installable/removable application in
+  graphical package apps such as the Zorin Store / GNOME Software. Without an
+  AppData file the package could still be installed, but it would not be
+  presented nicely (name, summary, license, matching binary) in the GUI, nor
+  show up reliably in the "Installed" view for removal.
+-->
+<component type="desktop-application">
+  <id>io.github.OomNiel.MyNemo</id>
+  <metadata_license>FSFAP</metadata_license>
+  <name>Files</name>
+  <summary>File manager and graphical shell for the Cinnamon desktop</summary>
+  <description>
+    <p>
+      Nemo is the official file manager for the Cinnamon desktop. It allows
+      you to browse directories, preview files and launch the applications
+      associated with them, and it is also responsible for handling the
+      icons on the desktop. It works on local and remote filesystems.
+    </p>
+    <p>
+      Nemo supports tabs, dual-pane ("Extra Pane") view, file previews,
+      scripting through the context menu, and quick actions such as
+      Duplicate and Backup of the selected items.
+    </p>
+  </description>
+  <project_license>GPL-2.0-or-later</project_license>
+  <launchable type="desktop-id">nemo.desktop</launchable>
+  <url type="homepage">https://github.com/linuxmint/nemo</url>
+  <url type="bugtracker">https://github.com/linuxmint/nemo/issues</url>
+  <provides>
+    <binary>nemo</binary>
+  </provides>
+  <categories>
+    <category>Utility</category>
+    <category>Core</category>
+    <category>FileTools</category>
+  </categories>
+</component>

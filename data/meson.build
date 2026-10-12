@@ -11,6 +11,12 @@ install_data(desktopFiles,
   install_dir: join_paths(get_option('datadir'), 'applications')
 )
 
+# AppStream metadata: lets graphical package apps (e.g. the Zorin Store /
+# GNOME Software) present and remove Nemo as an application.
+install_data('nemo.appdata.xml',
+  install_dir: join_paths(get_option('datadir'), 'metainfo')
+)
+
 ################################################################################
 dataConf = configuration_data()
 dataConf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))

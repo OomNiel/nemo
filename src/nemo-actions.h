@@ -96,6 +96,7 @@
 #define NEMO_ACTION_LOCATION_PASTE_FILES_INTO "LocationPasteFilesInto"
 #define NEMO_ACTION_RENAME "Rename"
 #define NEMO_ACTION_DUPLICATE "Duplicate"
+#define NEMO_ACTION_BACKUP "Backup"
 #define NEMO_ACTION_CREATE_LINK "Create Link"
 #define NEMO_ACTION_SELECT_ALL "Select All"
 #define NEMO_ACTION_INVERT_SELECTION "Invert Selection"
@@ -199,6 +200,9 @@ static const ConfigurableMenuItemInfo CONFIGURABLE_MENU_ITEM_INFO [] = {
 
     { NEMO_ACTION_DUPLICATE, "selection_menu__duplicate_check",
      "/selection/File Clipboard Actions/Duplicate", "selection-menu-duplicate" },
+
+    { NEMO_ACTION_BACKUP, "selection_menu__backup_check",
+     "/selection/File Actions/Backup", "selection-menu-backup" },
 
     { NEMO_ACTION_PIN_FILE, "selection_menu__pin_check",
      "/selection/File Actions/Pin File", "selection-menu-pin" },

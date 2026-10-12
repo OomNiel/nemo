@@ -21,6 +21,37 @@ export DPKG_GENSYMBOLS_CHECK_LEVEL = 2
 override_dh_auto_configure:
 	dh_auto_configure -- $(CONFIGURE_EXTRA_FLAGS)
 
+override_dh_auto_install:
+	dh_auto_install
+	# Copy dependency .gir files into staging for dh_girepository
+	for gir in /home/niel/nemo-prefix/usr/share/gir-1.0/*.gir; do \
+		cp -n "$$gir" $(CURDIR)/debian/tmp/usr/share/gir-1.0/ 2>/dev/null || true; \
+	done
+	# Compile .gir files to .typelib into staging
+	for gir in $(CURDIR)/debian/tmp/usr/share/gir-1.0/*.gir; do \
+		g-ir-compiler "$$gir" -o "$${gir%.gir}.typelib" 2>/dev/null || true; \
+	done
+
+override_dh_girepository:
+	# Copy dependency .gir/.typelib to all package staging dirs for dh_girepository
+	for pkg in $$(dh_listpackages); do \
+		mkdir -p debian/$$pkg/usr/share/gir-1.0 debian/$$pkg/usr/lib/x86_64-linux-gnu/girepository-1.0; \
+		cp -n /home/niel/nemo-prefix/usr/share/gir-1.0/*.gir debian/$$pkg/usr/share/gir-1.0/ 2>/dev/null || true; \
+		cp -n /home/niel/nemo-prefix/usr/lib/x86_64-linux-gnu/girepository-1.0/*.typelib debian/$$pkg/usr/lib/x86_64-linux-gnu/girepository-1.0/ 2>/dev/null || true; \
+	done
+	dh_girepository /home/niel/nemo-prefix/usr/lib/x86_64-linux-gnu /home/niel/nemo-prefix/usr/lib/x86_64-linux-gnu/girepository-1.0 /home/niel/nemo-prefix/usr/share/gir-1.0
+	# Remove dependency .gir/.typelib files (keep only Nemo's)
+	for pkg in $$(dh_listpackages); do \
+		for gir in debian/$$pkg/usr/share/gir-1.0/*.gir; do \
+			base=$$(basename "$$gir"); \
+			[ "$$base" != "Nemo-3.0.gir" ] && rm -f "$$gir"; \
+		done; \
+		for typ in debian/$$pkg/usr/lib/x86_64-linux-gnu/girepository-1.0/*.typelib; do \
+			base=$$(basename "$$typ"); \
+			[ "$$base" != "Nemo-3.0.typelib" ] && rm -f "$$typ"; \
+		done; \
+	done
+
 override_dh_auto_test:
 	# Disabled
 	:

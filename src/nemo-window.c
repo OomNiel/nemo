@@ -2254,13 +2254,22 @@ nemo_window_restore_saved_tabs (NemoWindow *window)
 
 	if ((left_uris == NULL || left_uris[0] == NULL) &&
 	    (right_uris == NULL || right_uris[0] == NULL)) {
-		g_strfreev (left_uris);
-		g_strfreev (right_uris);
-		return FALSE;
+		/* If no tabs were saved at all, only bail out when the
+		 * split view was not active. When the split view *was*
+		 * active we still want to create the extra pane so that
+		 * the user's preference is honoured. */
+		if (!saved_split) {
+			g_strfreev (left_uris);
+			g_strfreev (right_uris);
+			return FALSE;
+		}
 	}
 
-	/* Only create the extra pane if we actually have tabs to restore there */
-	want_split = saved_split && (right_uris != NULL && right_uris[0] != NULL);
+	/* Restore the split view based on the saved state, even when
+	 * the right pane has no savable tab URIs (e.g. the URI was a
+	 * search or other non-native location). nemo_window_split_view_on
+	 * will open a sensible default location for the right pane. */
+	want_split = saved_split;
 
 	if (want_split && !nemo_window_split_view_showing (window)) {
 		nemo_window_split_view_on (window);

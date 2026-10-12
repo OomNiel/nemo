@@ -4469,6 +4469,13 @@ copy_move_file (CopyMoveJob *copy_job,
 	} else if (copy_job->target_name != NULL) {
 		dest = get_target_file_with_custom_name (src, dest_dir, *dest_fs_type, same_fs,
 							 copy_job->target_name);
+		/* target_name is a one-shot rename applied to the top-level item
+		 * being copied. Once its destination has been resolved it must be
+		 * cleared, otherwise recursive copies of a directory's children
+		 * would each be renamed to the parent's target name instead of
+		 * keeping their own names. */
+		g_free (copy_job->target_name);
+		copy_job->target_name = NULL;
 	} else {
 		dest = get_target_file (src, dest_dir, *dest_fs_type, same_fs);
 	}

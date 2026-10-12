@@ -186,6 +186,7 @@
         <menuitem name="Pin File" action="Pin File"/>
         <menuitem name="Unpin File" action="Unpin File"/>
 		<menuitem name="Create Link" action="Create Link"/>
+		<menuitem name="Backup" action="Backup"/>
 		<menuitem name="Rename" action="Rename"/>
 		<menu name="CopyToMenu" action="CopyToMenu">
 			<menuitem name="Copy to next pane" action="Copy to next pane"/>

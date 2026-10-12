@@ -341,6 +341,8 @@ static gboolean display_selection_info_idle_callback           (gpointer        
 static void     nemo_view_duplicate_selection              (NemoView      *view,
 							        GList                *files,
 							        GArray               *item_locations);
+static void     nemo_view_backup_selection                (NemoView      *view,
+							        GList                *files);
 static void     nemo_view_create_links_for_files           (NemoView      *view,
 							        GList                *files,
 							        GArray               *item_locations);
@@ -1581,6 +1583,22 @@ action_duplicate_callback (GtkAction *action,
 	        nemo_view_duplicate_selection (view, selection, selected_item_locations);
 	        g_array_free (selected_item_locations, TRUE);
 	}
+
+        nemo_file_list_free (selection);
+}
+
+static void
+action_backup_callback (GtkAction *action,
+                        gpointer callback_data)
+{
+        NemoView *view;
+        GList *selection;
+
+        view = NEMO_VIEW (callback_data);
+        selection = nemo_view_get_selection_for_file_transfer (view);
+        if (selection_not_empty_in_menu_callback (view, selection)) {
+                nemo_view_backup_selection (view, selection);
+        }
 
         nemo_file_list_free (selection);
 }
@@ -4448,6 +4466,109 @@ nemo_view_duplicate_selection (NemoView *view, GList *files,
 	nemo_file_operations_copy_move (uris, relative_item_points, NULL, GDK_ACTION_COPY,
 					    GTK_WIDGET (view), copy_move_done_callback, copy_move_done_data);
 	g_list_free_full (uris, g_free);
+}
+
+/* Builds the backup filename "<display_name>_YYYY-MM-DD_HH:MM:SS" for the given
+ * file. The resulting string must be freed by the caller. */
+static char *
+nemo_get_backup_name (NemoFile *file,
+                      const char *timestamp)
+{
+	char *display_name;
+	char *backup_name;
+
+	g_return_val_if_fail (NEMO_IS_FILE (file), NULL);
+	g_return_val_if_fail (timestamp != NULL, NULL);
+
+	display_name = nemo_file_get_display_name (file);
+	if (display_name == NULL) {
+		return NULL;
+	}
+
+	backup_name = g_strdup_printf ("%s_%s", display_name, timestamp);
+	g_free (display_name);
+
+	return backup_name;
+}
+
+/* Makes a backup copy of each selected file/folder.
+ *
+ * The backup is named the same as the original item with the current date and
+ * time appended (e.g. "RustyPlatform_2026-10-04_12:19:24") and is placed in the
+ * parent folder of the backed up item. All items share a single timestamp that
+ * is captured when the operation starts, so a batch of backups taken at the
+ * same time are easy to recognize. */
+static void
+nemo_view_backup_selection (NemoView *view, GList *files)
+{
+	GList *l;
+	GDateTime *now;
+	char *timestamp;
+	GtkWindow *parent_window;
+
+	g_assert (NEMO_IS_VIEW (view));
+	g_assert (files != NULL);
+
+	parent_window = nemo_view_get_containing_window (view);
+
+	/* Capture a single timestamp for the whole operation so that backups
+	 * taken together share the same suffix. */
+	now = g_date_time_new_now_local ();
+	timestamp = g_date_time_format (now, "%Y-%m-%d_%H:%M:%S");
+	g_date_time_unref (now);
+
+	if (timestamp == NULL || timestamp[0] == '\0') {
+		g_free (timestamp);
+		return;
+	}
+
+	for (l = files; l != NULL; l = l->next) {
+		NemoFile *file;
+		GFile *source;
+		GFile *parent;
+		char *display_name;
+		char *backup_name;
+
+		file = NEMO_FILE (l->data);
+
+		source = nemo_file_get_location (file);
+		parent = nemo_file_get_parent_location (file);
+
+		/* Fall back to deriving the parent from the source location in case
+		 * the parent location is not directly available. */
+		if (parent == NULL && source != NULL) {
+			parent = g_file_get_parent (source);
+		}
+
+		if (parent == NULL) {
+			/* We could not determine a parent directory, skip this item. */
+			g_object_unref (source);
+			continue;
+		}
+
+		display_name = nemo_file_get_display_name (file);
+		backup_name = nemo_get_backup_name (file, timestamp);
+		if (backup_name == NULL) {
+			g_free (display_name);
+			g_object_unref (source);
+			g_object_unref (parent);
+			continue;
+		}
+
+		nemo_file_operations_copy_file (source,
+						parent,
+						display_name,
+						backup_name,
+						parent_window,
+						NULL, NULL);
+
+		g_free (backup_name);
+		g_free (display_name);
+		g_object_unref (source);
+		g_object_unref (parent);
+	}
+
+	g_free (timestamp);
 }
 
 /* special_link_in_selection
@@ -8446,6 +8567,10 @@ static const GtkActionEntry directory_view_entries[] = {
   /* label, accelerator */       N_("D_uplicate"), NULL,
   /* tooltip */                  N_("Duplicate each selected item"),
 				 G_CALLBACK (action_duplicate_callback) },
+  /* name, stock id */         { NEMO_ACTION_BACKUP, NULL,
+  /* label, accelerator */       N_("_Backup"), NULL,
+  /* tooltip */                  N_("Make a backup copy of each selected item, placing it in the parent folder with the current date and time appended to its name"),
+				 G_CALLBACK (action_backup_callback) },
   /* name, stock id */         { "Create Link", NULL,
   /* label, accelerator */       N_("Ma_ke Link"), "<control>M",
   /* tooltip */                  N_("Create a symbolic link for each selected item"),
@@ -10002,6 +10127,11 @@ real_update_menus (NemoView *view)
 	update_restore_from_trash_action (action, selection, FALSE);
 
 	action = gtk_action_group_get_action (view->details->dir_action_group, NEMO_ACTION_DUPLICATE);
+	gtk_action_set_sensitive (action, can_duplicate_files);
+    gtk_action_set_visible (action, !selection_contains_recent && !selection_contains_favorites);
+
+	action = gtk_action_group_get_action (view->details->dir_action_group,
+					      NEMO_ACTION_BACKUP);
 	gtk_action_set_sensitive (action, can_duplicate_files);
     gtk_action_set_visible (action, !selection_contains_recent && !selection_contains_favorites);
 

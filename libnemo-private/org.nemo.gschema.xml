@@ -799,6 +799,10 @@
       <default>false</default>
       <summary>Show the selection context menu's Duplicate item.</summary>
     </key>
+    <key name="selection-menu-backup" type="b">
+      <default>true</default>
+      <summary>Show the selection context menu's Backup item.</summary>
+    </key>
     <key name="selection-menu-pin" type="b">
       <default>true</default>
       <summary>Show the selection context menu's Pin/Unpin item.</summary>
