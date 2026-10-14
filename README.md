@@ -67,6 +67,31 @@ timestamp.
   top-level destination has been resolved, so backing up a folder no longer renames every
   child instead of keeping its own name.
 
+"Backup as Archive" context-menu item
+----
+Adds **Backup as Archive** next to **Backup**. Instead of a plain copy it creates a **single
+compressed archive of the whole selection**, named `<name>_YYYY-MM-DD_HH:MM:SS.<ext>` in the
+parent folder (with several items selected the archive is named after the folder that contains
+them).
+
+- The format is configurable: `zip` (default), `tar.gz`, `tar.xz`, `tar.zst` or `7z`.
+- The archiver (`zip`, `tar` or `7z`) is spawned directly — no shell is used — and the archive
+  is written to an absolute path, so `tar`'s `-C` handling of items that live in different
+  folders cannot misfile it.
+- Progress is reported in the window's **status bar** (`Creating archive: <name>`, updated with
+  a live item count, then `Archive created: <name>`). Nemo's own progress window is not used
+  because it only appears for jobs that call `nemo_progress_info_queue()`. On failure an error
+  dialog shows the archiver's own output.
+- `src/nemo-view.c` — `action_backup_archive_callback()` and
+  `nemo_view_backup_archive_selection()`.
+- `src/nemo-actions.h` — `NEMO_ACTION_BACKUP_ARCHIVE` and its configurable-menu-item info.
+- `gresources/nemo-directory-view-ui.xml` — the menu item.
+- `gresources/nemo-file-management-properties.glade` — the "Backup as Archive" toggle and the
+  "Archive format:" chooser.
+- `libnemo-private/org.nemo.gschema.xml` — `selection-menu-backup-archive`
+  (`org.nemo.preferences.menu-config`, default `true`) and `backup-archive-format`
+  (`org.nemo.preferences`, default `'zip'`).
+
 "Extra Pane" (split view) persistence
 ----
 The dual-pane toggle state is remembered between sessions, even when the right pane holds no

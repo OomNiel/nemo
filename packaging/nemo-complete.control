@@ -12,7 +12,7 @@ Replaces: nemo, nemo-data, nemo-dbg, libnemo-extension1, libnemo-extension-dev, 
 Section: misc
 Priority: optional
 Homepage: https://github.com/linuxmint/nemo/
-Description: file manager and graphical shell for Cinnamon (complete package with Extra Pane persistence fix)
+Description: file manager and graphical shell for Cinnamon (combined package: Extra Pane persistence, Backup actions, coloured folder names)
  Nemo is the official file manager for the Cinnamon desktop. It allows
  you to browse directories, preview files and launch applications
  associated with them, and it is also responsible for handling the
@@ -28,3 +28,12 @@ Description: file manager and graphical shell for Cinnamon (complete package wit
  New: a "Backup" item is added to the file/folder context menu. It
  creates a timestamped copy named "<name>_YYYY-MM-DD_HH:MM:SS" of the
  selected item in its parent folder.
+ .
+ New: a "Backup as Archive" item creates a single compressed archive of
+ the whole selection (zip, tar.gz, tar.xz, tar.zst or 7z; the format is
+ set with the backup-archive-format preference). Progress is reported in
+ the window status bar.
+ .
+ New: folder names in the list view are drawn in a theme-aware green (dark
+ green on light themes, light green on dark themes) so that folders stand
+ out from files.

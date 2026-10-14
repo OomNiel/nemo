@@ -459,6 +459,11 @@
       <default>-1</default>
       <summary>Number of threads to dedicate to thumbnailing. -1 to let the program decide. The maximum allowed threads is half the number of logical processors, regardless of what is set here. If you change this setting you must restart Nemo for it to take effect.</summary>
     </key>
+    <key name="backup-archive-format" type="s">
+      <default>'zip'</default>
+      <summary>Archive format used by the "Backup as Archive" selection context menu item.</summary>
+      <description>One of "zip", "tar.gz", "tar.xz", "tar.zst" or "7z".</description>
+    </key>
   </schema>
 
   <schema id="org.nemo.icon-view" path="/org/nemo/icon-view/" gettext-domain="nemo">
@@ -802,6 +807,10 @@
     <key name="selection-menu-backup" type="b">
       <default>true</default>
       <summary>Show the selection context menu's Backup item.</summary>
+    </key>
+    <key name="selection-menu-backup-archive" type="b">
+      <default>true</default>
+      <summary>Show the selection context menu's Backup as Archive item.</summary>
     </key>
     <key name="selection-menu-pin" type="b">
       <default>true</default>
