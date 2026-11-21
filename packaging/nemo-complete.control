@@ -12,7 +12,7 @@ Replaces: nemo, nemo-data, nemo-dbg, libnemo-extension1, libnemo-extension-dev, 
 Section: misc
 Priority: optional
 Homepage: https://github.com/linuxmint/nemo/
-Description: file manager and graphical shell for Cinnamon (combined package: Extra Pane persistence, Backup actions, coloured folder names)
+Description: file manager and graphical shell for Cinnamon (combined package: Extra Pane persistence, Backup actions, AppImage actions, coloured folder names)
  Nemo is the official file manager for the Cinnamon desktop. It allows
  you to browse directories, preview files and launch applications
  associated with them, and it is also responsible for handling the
@@ -37,3 +37,8 @@ Description: file manager and graphical shell for Cinnamon (combined package: Ex
  New: folder names in the list view are drawn in a theme-aware green (dark
  green on light themes, light green on dark themes) so that folders stand
  out from files.
+ .
+ New: right-clicking a single "*.AppImage" offers "Make Executable" and
+ "Create App Shortcut". The shortcut is a .desktop launcher in
+ ~/.local/share/applications using the app's embedded name, categories
+ and icon, so the app appears in the applications menu.

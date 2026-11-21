@@ -98,6 +98,8 @@
 #define NEMO_ACTION_DUPLICATE "Duplicate"
 #define NEMO_ACTION_BACKUP "Backup"
 #define NEMO_ACTION_BACKUP_ARCHIVE "Backup as Archive"
+#define NEMO_ACTION_APPIMAGE_MAKE_EXECUTABLE "AppImage Make Executable"
+#define NEMO_ACTION_APPIMAGE_CREATE_SHORTCUT "AppImage Create Shortcut"
 #define NEMO_ACTION_CREATE_LINK "Create Link"
 #define NEMO_ACTION_SELECT_ALL "Select All"
 #define NEMO_ACTION_INVERT_SELECTION "Invert Selection"

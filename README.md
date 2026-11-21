@@ -92,6 +92,30 @@ them).
   (`org.nemo.preferences.menu-config`, default `true`) and `backup-archive-format`
   (`org.nemo.preferences`, default `'zip'`).
 
+AppImage actions
+----
+Selecting a single `*.AppImage` (matched case-insensitively) adds two items to the file
+context menu:
+
+- **Make Executable** — sets the user/group/other execute bits, exactly like Nemo's own
+  "Make executable and run" prompt. It is greyed out when the file is already executable or
+  the location is not writable.
+- **Create App Shortcut** — makes the AppImage executable if needed, then writes a standard
+  `.desktop` launcher to `~/.local/share/applications/` and runs `update-desktop-database`.
+  `Name` and `Categories` come from the `.desktop` file embedded in the AppImage (with the
+  file name as fallback) and `Exec` points at the AppImage's absolute path. The icon is taken
+  from the AppImage's `.DirIcon` (falling back to the icon named by the embedded `.desktop`)
+  and installed into the user's `hicolor` theme, so `Icon=` resolves.
+
+Only the AppImage's own `--appimage-extract` is used, so no extra dependency is required.
+Both items are hidden in Recent/Favorites and when more than one item is selected.
+
+- `src/nemo-view.c` — the action callbacks, `nemo_file_is_appimage()` and the shortcut
+  creation.
+- `src/nemo-actions.h` — `NEMO_ACTION_APPIMAGE_MAKE_EXECUTABLE` and
+  `NEMO_ACTION_APPIMAGE_CREATE_SHORTCUT`.
+- `gresources/nemo-directory-view-ui.xml` — the menu items.
+
 "Extra Pane" (split view) persistence
 ----
 The dual-pane toggle state is remembered between sessions, even when the right pane holds no

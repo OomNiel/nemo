@@ -188,6 +188,8 @@
 		<menuitem name="Create Link" action="Create Link"/>
 		<menuitem name="Backup" action="Backup"/>
 		<menuitem name="Backup as Archive" action="Backup as Archive"/>
+		<menuitem name="AppImage Make Executable" action="AppImage Make Executable"/>
+		<menuitem name="AppImage Create Shortcut" action="AppImage Create Shortcut"/>
 		<menuitem name="Rename" action="Rename"/>
 		<menu name="CopyToMenu" action="CopyToMenu">
 			<menuitem name="Copy to next pane" action="Copy to next pane"/>

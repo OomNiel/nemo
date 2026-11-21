@@ -1662,6 +1662,641 @@ action_backup_archive_callback(GtkAction *action,
 	nemo_file_list_free(selection);
 }
 
+/* ---------------------------------------------------------------------------
+ * AppImage actions
+ *
+ * A selected *.AppImage (matched case-insensitively) gets two extra
+ * context-menu items: "Make Executable" and "Create App Shortcut".
+ *
+ * The shortcut is a standard .desktop launcher written to
+ * ~/.local/share/applications, built from the name, categories and icon
+ * embedded in the AppImage. No extra dependency is needed: the AppImage's own
+ * --appimage-extract is used to pull out its .desktop file and .DirIcon, and
+ * the icon is copied into the user's hicolor theme so that Icon= resolves.
+ */
+
+static gboolean
+nemo_file_is_appimage(NemoFile *file)
+{
+	char *name;
+	char *lower;
+	gboolean is_appimage;
+
+	name = nemo_file_get_name(file);
+	if (name == NULL)
+	{
+		return FALSE;
+	}
+
+	lower = g_ascii_strdown(name, -1);
+	is_appimage = g_str_has_suffix(lower, ".appimage");
+
+	g_free(lower);
+	g_free(name);
+
+	return is_appimage;
+}
+
+/* Deletes a directory tree (used for the temporary extraction directory). */
+static void
+appimage_remove_tree(const char *path)
+{
+	GDir *dir;
+	const char *name;
+
+	if (g_file_test(path, G_FILE_TEST_IS_DIR))
+	{
+		dir = g_dir_open(path, 0, NULL);
+		if (dir != NULL)
+		{
+			while ((name = g_dir_read_name(dir)) != NULL)
+			{
+				char *child = g_build_filename(path, name, NULL);
+
+				appimage_remove_tree(child);
+				g_free(child);
+			}
+			g_dir_close(dir);
+		}
+		g_rmdir(path);
+	}
+	else
+	{
+		g_remove(path);
+	}
+}
+
+/* Quotes a path for the Exec= key of a desktop entry, when needed. */
+static char *
+appimage_quote_exec(const char *path)
+{
+	const char *p;
+	gboolean needs_quotes = FALSE;
+	GString *quoted;
+
+	for (p = path; *p != '\0'; p++)
+	{
+		if (*p == ' ' || *p == '\t' || *p == '"' || *p == '\'' ||
+			*p == '`' || *p == '$' || *p == '\\')
+		{
+			needs_quotes = TRUE;
+			break;
+		}
+	}
+
+	if (!needs_quotes)
+	{
+		return g_strdup(path);
+	}
+
+	quoted = g_string_new("\"");
+	for (p = path; *p != '\0'; p++)
+	{
+		if (*p == '"' || *p == '`' || *p == '$' || *p == '\\')
+		{
+			g_string_append_c(quoted, '\\');
+		}
+		g_string_append_c(quoted, *p);
+	}
+	g_string_append_c(quoted, '"');
+
+	return g_string_free(quoted, FALSE);
+}
+
+/* Turns a name into something usable as an icon / desktop-file name. */
+static char *
+appimage_make_identifier(const char *name)
+{
+	const char *p;
+	gboolean last_dash = FALSE;
+	GString *out;
+
+	out = g_string_new(NULL);
+	for (p = name; *p != '\0'; p++)
+	{
+		if (g_ascii_isalnum(*p))
+		{
+			g_string_append_c(out, g_ascii_tolower(*p));
+			last_dash = FALSE;
+		}
+		else if (!last_dash)
+		{
+			g_string_append_c(out, '-');
+			last_dash = TRUE;
+		}
+	}
+
+	while (out->len > 0 && out->str[out->len - 1] == '-')
+	{
+		g_string_truncate(out, out->len - 1);
+	}
+
+	if (out->len == 0)
+	{
+		g_string_append(out, "appimage");
+	}
+
+	return g_string_free(out, FALSE);
+}
+
+/* Finds the first *.desktop file inside an extracted squashfs-root. */
+static char *
+appimage_find_desktop_file(const char *squashfs_root)
+{
+	GDir *dir;
+	const char *name;
+	char *found = NULL;
+
+	dir = g_dir_open(squashfs_root, 0, NULL);
+	if (dir == NULL)
+	{
+		return NULL;
+	}
+
+	while ((name = g_dir_read_name(dir)) != NULL)
+	{
+		char *lower = g_ascii_strdown(name, -1);
+
+		if (g_str_has_suffix(lower, ".desktop"))
+		{
+			found = g_build_filename(squashfs_root, name, NULL);
+			g_free(lower);
+			break;
+		}
+
+		g_free(lower);
+	}
+
+	g_dir_close(dir);
+
+	return found;
+}
+
+/* Copies @icon_path into the user's hicolor theme and returns the icon name
+ * to use in the desktop file, or NULL if the icon could not be installed. */
+static char *
+appimage_install_icon(const char *icon_path, const char *icon_name)
+{
+	guchar *contents = NULL;
+	gsize length = 0;
+	GdkPixbufLoader *loader;
+	GdkPixbuf *pixbuf = NULL;
+	guchar *data = NULL;
+	gsize data_length = 0;
+	const char *extension;
+	char *size_dir;
+	char *icons_dir;
+	char *icon_file;
+	char *icon_dest;
+	char *result = NULL;
+	gboolean written;
+
+	if (!g_file_get_contents(icon_path, (gchar **)&contents, &length, NULL))
+	{
+		return NULL;
+	}
+
+	loader = gdk_pixbuf_loader_new();
+	if (gdk_pixbuf_loader_write(loader, contents, length, NULL))
+	{
+		if (gdk_pixbuf_loader_close(loader, NULL))
+		{
+			pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
+		}
+	}
+	else
+	{
+		gdk_pixbuf_loader_close(loader, NULL);
+	}
+
+	if (pixbuf != NULL &&
+		gdk_pixbuf_save_to_buffer(pixbuf, (gchar **)&data, &data_length, "png", NULL, NULL))
+	{
+		size_dir = g_strdup_printf("%dx%d",
+								   gdk_pixbuf_get_width(pixbuf),
+								   gdk_pixbuf_get_height(pixbuf));
+		extension = "png";
+	}
+	else
+	{
+		/* Not a bitmap image: treat it as a scalable (SVG) icon. */
+		size_dir = g_strdup("scalable");
+		extension = "svg";
+		data = contents;
+		data_length = length;
+		contents = NULL;
+	}
+
+	icons_dir = g_build_filename(g_get_user_data_dir(), "icons", "hicolor",
+								 size_dir, "apps", NULL);
+	icon_file = g_strdup_printf("%s.%s", icon_name, extension);
+	icon_dest = g_build_filename(icons_dir, icon_file, NULL);
+
+	g_mkdir_with_parents(icons_dir, 0755);
+	written = g_file_set_contents(icon_dest, (const gchar *)data, data_length, NULL);
+
+	if (written)
+	{
+		result = g_strdup(icon_name);
+	}
+
+	g_free(icon_dest);
+	g_free(icon_file);
+	g_free(icons_dir);
+	g_free(size_dir);
+	g_free(data);
+	g_free(contents);
+	g_object_unref(loader);
+
+	return result;
+}
+
+/* Creates the .desktop launcher for @file in ~/.local/share/applications. */
+static void
+appimage_create_shortcut(NemoView *view, NemoFile *file)
+{
+	GFile *location = NULL;
+	char *appimage_path = NULL;
+	char *temp_dir = NULL;
+	char *stderr_text = NULL;
+	char *squashfs_root = NULL;
+	char *desktop_source = NULL;
+	char *icon_source = NULL;
+	char *name = NULL;
+	char *embedded_icon = NULL;
+	char *categories = NULL;
+	char *display_name = NULL;
+	char *identifier = NULL;
+	char *installed_icon = NULL;
+	char *apps_dir = NULL;
+	char *desktop_file = NULL;
+	char *exec = NULL;
+	char *desktop_contents = NULL;
+	char *status_text = NULL;
+	char *error_text = NULL;
+	gboolean success = FALSE;
+	gint status = 0;
+	GKeyFile *key_file = NULL;
+	GError *error = NULL;
+	GtkWindow *parent_window;
+
+	parent_window = nemo_view_get_containing_window(view);
+
+	location = nemo_file_get_location(file);
+	if (location != NULL)
+	{
+		appimage_path = g_file_get_path(location);
+		g_object_unref(location);
+	}
+
+	if (appimage_path == NULL)
+	{
+		error_text = g_strdup(_("The selected file has no local path."));
+		goto out;
+	}
+
+	temp_dir = g_dir_make_tmp("nemo-appimage-XXXXXX", &error);
+	if (temp_dir == NULL)
+	{
+		error_text = g_strdup(error != NULL ? error->message : _("Unknown error"));
+		goto out;
+	}
+
+	/* Pull the embedded desktop file and icon out of the AppImage. */
+	{
+		gchar *argv_desktop[] = {appimage_path, (gchar *)"--appimage-extract", (gchar *)"*.desktop", NULL};
+		gchar *argv_icon[] = {appimage_path, (gchar *)"--appimage-extract", (gchar *)".DirIcon", NULL};
+
+		if (!g_spawn_sync(temp_dir, argv_desktop, NULL, G_SPAWN_SEARCH_PATH,
+						  NULL, NULL, NULL, &stderr_text, &status, &error) ||
+			!g_spawn_check_wait_status(status, &error))
+		{
+			error_text = g_strdup(stderr_text != NULL && stderr_text[0] != '\0'
+									  ? g_strstrip(stderr_text)
+									  : (error != NULL ? error->message : _("Could not unpack the AppImage.")));
+			goto out;
+		}
+
+		g_free(stderr_text);
+		stderr_text = NULL;
+
+		/* The icon is optional: ignore any failure here. */
+		g_spawn_sync(temp_dir, argv_icon, NULL, G_SPAWN_SEARCH_PATH,
+					 NULL, NULL, NULL, NULL, &status, NULL);
+		g_clear_error(&error);
+	}
+
+	squashfs_root = g_build_filename(temp_dir, "squashfs-root", NULL);
+
+	/* Read Name / Icon / Categories from the embedded desktop file. */
+	desktop_source = appimage_find_desktop_file(squashfs_root);
+	if (desktop_source != NULL)
+	{
+		key_file = g_key_file_new();
+		if (g_key_file_load_from_file(key_file, desktop_source, G_KEY_FILE_NONE, NULL))
+		{
+			name = g_key_file_get_string(key_file, "Desktop Entry", "Name", NULL);
+			embedded_icon = g_key_file_get_string(key_file, "Desktop Entry", "Icon", NULL);
+			categories = g_key_file_get_string(key_file, "Desktop Entry", "Categories", NULL);
+		}
+	}
+
+	/* Fall back to the file name (without the .AppImage suffix). */
+	if (name == NULL || name[0] == '\0')
+	{
+		display_name = nemo_file_get_display_name(file);
+		if (display_name != NULL)
+		{
+			char *dot = g_strrstr(display_name, ".");
+
+			if (dot != NULL && g_ascii_strcasecmp(dot, ".appimage") == 0)
+			{
+				*dot = '\0';
+			}
+
+			g_free(name);
+			name = g_strdup(display_name);
+		}
+	}
+
+	identifier = appimage_make_identifier(embedded_icon != NULL && embedded_icon[0] != '\0'
+											  ? embedded_icon
+											  : (name != NULL ? name : "appimage"));
+
+	/* Prefer the AppImage's standard .DirIcon. It is often a symlink to the
+	 * real icon, which has to be extracted separately. */
+	icon_source = g_build_filename(squashfs_root, ".DirIcon", NULL);
+	if (!g_file_test(icon_source, G_FILE_TEST_IS_REGULAR))
+	{
+		char *target = g_file_read_link(icon_source, NULL);
+
+		if (target != NULL && target[0] != '/' && g_strstr_len(target, -1, "..") == NULL)
+		{
+			gchar *argv_target[] = {appimage_path, (gchar *)"--appimage-extract", target, NULL};
+
+			g_spawn_sync(temp_dir, argv_target, NULL, G_SPAWN_SEARCH_PATH,
+						 NULL, NULL, NULL, NULL, &status, NULL);
+		}
+
+		g_free(target);
+
+		if (!g_file_test(icon_source, G_FILE_TEST_IS_REGULAR))
+		{
+			g_free(icon_source);
+			icon_source = NULL;
+		}
+	}
+
+	/* Otherwise use the icon the embedded desktop file names. */
+	if (icon_source == NULL && embedded_icon != NULL && embedded_icon[0] != '\0')
+	{
+		const char *icon_extensions[] = {".svg", ".png", "", NULL};
+		int i;
+
+		for (i = 0; icon_extensions[i] != NULL && icon_source == NULL; i++)
+		{
+			char *file_name = g_strconcat(embedded_icon, icon_extensions[i], NULL);
+			char *candidate = g_build_filename(squashfs_root, file_name, NULL);
+
+			if (!g_file_test(candidate, G_FILE_TEST_IS_REGULAR))
+			{
+				gchar *argv_named[] = {appimage_path, (gchar *)"--appimage-extract", file_name, NULL};
+
+				g_spawn_sync(temp_dir, argv_named, NULL, G_SPAWN_SEARCH_PATH,
+							 NULL, NULL, NULL, NULL, &status, NULL);
+			}
+
+			if (g_file_test(candidate, G_FILE_TEST_IS_REGULAR))
+			{
+				icon_source = candidate;
+			}
+			else
+			{
+				g_free(candidate);
+			}
+
+			g_free(file_name);
+		}
+	}
+
+	if (icon_source != NULL)
+	{
+		installed_icon = appimage_install_icon(icon_source, identifier);
+	}
+
+	apps_dir = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+	g_mkdir_with_parents(apps_dir, 0755);
+
+	desktop_file = g_build_filename(apps_dir, identifier, NULL);
+	{
+		char *with_ext = g_strconcat(desktop_file, ".desktop", NULL);
+
+		g_free(desktop_file);
+		desktop_file = with_ext;
+	}
+
+	exec = appimage_quote_exec(appimage_path);
+
+	desktop_contents = g_strdup_printf(
+		"[Desktop Entry]\n"
+		"Type=Application\n"
+		"Name=%s\n"
+		"Exec=%s\n"
+		"Icon=%s\n"
+		"Terminal=false\n"
+		"Categories=%s\n"
+		"StartupNotify=true\n",
+		name != NULL && name[0] != '\0' ? name : identifier,
+		exec,
+		installed_icon != NULL ? installed_icon : "application-x-executable",
+		categories != NULL && categories[0] != '\0' ? categories : "Utility;");
+
+	if (!g_file_set_contents(desktop_file, desktop_contents, -1, &error))
+	{
+		error_text = g_strdup(error != NULL ? error->message : _("Could not write the shortcut."));
+		goto out;
+	}
+
+	success = TRUE;
+
+out:
+	if (success)
+	{
+		gchar *argv[] = {(gchar *)"update-desktop-database", apps_dir, NULL};
+
+		g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+
+		status_text = g_strdup_printf(_("App shortcut created: %s"),
+									  name != NULL && name[0] != '\0' ? name : identifier);
+		nemo_window_push_status(view->details->window, status_text);
+	}
+	else
+	{
+		eel_show_error_dialog(_("Could not create the app shortcut"),
+							  error_text != NULL ? error_text : _("Unknown error"),
+							  parent_window);
+	}
+
+	g_clear_error(&error);
+
+	if (key_file != NULL)
+	{
+		g_key_file_free(key_file);
+	}
+
+	if (temp_dir != NULL)
+	{
+		appimage_remove_tree(temp_dir);
+	}
+
+	g_free(status_text);
+	g_free(error_text);
+	g_free(desktop_contents);
+	g_free(exec);
+	g_free(desktop_file);
+	g_free(apps_dir);
+	g_free(installed_icon);
+	g_free(identifier);
+	g_free(display_name);
+	g_free(categories);
+	g_free(embedded_icon);
+	g_free(name);
+	g_free(icon_source);
+	g_free(desktop_source);
+	g_free(squashfs_root);
+	g_free(stderr_text);
+	g_free(temp_dir);
+	g_free(appimage_path);
+}
+
+static void
+appimage_shortcut_after_chmod(NemoFile *file,
+							  GFile *result_location,
+							  GError *error,
+							  gpointer callback_data)
+{
+	NemoView *view = NEMO_VIEW(callback_data);
+
+	if (error != NULL)
+	{
+		eel_show_error_dialog(_("Could not make the AppImage executable"),
+							  error->message,
+							  nemo_view_get_containing_window(view));
+	}
+	else
+	{
+		appimage_create_shortcut(view, file);
+	}
+
+	g_object_unref(view);
+}
+
+static void
+action_appimage_create_shortcut_callback(GtkAction *action,
+										 gpointer callback_data)
+{
+	NemoView *view;
+	GList *selection;
+	NemoFile *file;
+	guint32 permissions;
+
+	view = NEMO_VIEW(callback_data);
+	selection = nemo_view_get_selection_for_file_transfer(view);
+
+	if (selection != NULL && selection->next == NULL)
+	{
+		file = NEMO_FILE(selection->data);
+		permissions = nemo_file_get_permissions(file);
+
+		if (permissions & S_IXUSR)
+		{
+			appimage_create_shortcut(view, file);
+		}
+		else
+		{
+			char *display_name = nemo_file_get_display_name(file);
+			char *status_text = g_strdup_printf(_("Making executable: %s"), display_name);
+
+			nemo_window_push_status(view->details->window, status_text);
+			g_free(status_text);
+			g_free(display_name);
+
+			g_object_ref(view);
+			nemo_file_set_permissions(file,
+									  permissions | S_IXUSR | S_IXGRP | S_IXOTH,
+									  appimage_shortcut_after_chmod,
+									  view);
+		}
+	}
+
+	nemo_file_list_free(selection);
+}
+
+static void
+appimage_make_executable_done(NemoFile *file,
+							  GFile *result_location,
+							  GError *error,
+							  gpointer callback_data)
+{
+	NemoView *view = NEMO_VIEW(callback_data);
+
+	if (error != NULL)
+	{
+		eel_show_error_dialog(_("Could not make the file executable"),
+							  error->message,
+							  nemo_view_get_containing_window(view));
+	}
+	else
+	{
+		char *display_name = nemo_file_get_display_name(file);
+		char *status_text = g_strdup_printf(_("Now executable: %s"), display_name);
+
+		nemo_window_push_status(view->details->window, status_text);
+		g_free(status_text);
+		g_free(display_name);
+	}
+
+	g_object_unref(view);
+}
+
+static void
+action_appimage_make_executable_callback(GtkAction *action,
+										 gpointer callback_data)
+{
+	NemoView *view;
+	GList *selection;
+	NemoFile *file;
+	guint32 permissions;
+	char *display_name;
+	char *status_text;
+
+	view = NEMO_VIEW(callback_data);
+	selection = nemo_view_get_selection_for_file_transfer(view);
+
+	if (selection == NULL || selection->next != NULL)
+	{
+		nemo_file_list_free(selection);
+		return;
+	}
+
+	file = NEMO_FILE(selection->data);
+	permissions = nemo_file_get_permissions(file);
+
+	display_name = nemo_file_get_display_name(file);
+	status_text = g_strdup_printf(_("Making executable: %s"), display_name);
+	nemo_window_push_status(view->details->window, status_text);
+	g_free(status_text);
+	g_free(display_name);
+
+	g_object_ref(view);
+	nemo_file_set_permissions(file,
+							  permissions | S_IXUSR | S_IXGRP | S_IXOTH,
+							  appimage_make_executable_done,
+							  view);
+
+	nemo_file_list_free(selection);
+}
+
 static void
 action_create_link_callback(GtkAction *action,
 							gpointer callback_data)
@@ -9554,6 +10189,12 @@ static const GtkActionEntry directory_view_entries[] = {
 	/* name, stock id */ {NEMO_ACTION_BACKUP_ARCHIVE, NULL,
 						  /* label, accelerator */ N_("Backup as _Archive"), NULL,
 						  /* tooltip */ N_("Create a single compressed archive of the selected items, placing it in the parent folder with the current date and time appended to its name"), G_CALLBACK(action_backup_archive_callback)},
+	/* name, stock id */ {NEMO_ACTION_APPIMAGE_MAKE_EXECUTABLE, NULL,
+						  /* label, accelerator */ N_("_Make Executable"), NULL,
+						  /* tooltip */ N_("Allow executing this AppImage file"), G_CALLBACK(action_appimage_make_executable_callback)},
+	/* name, stock id */ {NEMO_ACTION_APPIMAGE_CREATE_SHORTCUT, NULL,
+						  /* label, accelerator */ N_("Create App _Shortcut"), NULL,
+						  /* tooltip */ N_("Add this AppImage to the applications menu"), G_CALLBACK(action_appimage_create_shortcut_callback)},
 	/* name, stock id */ {NEMO_ACTION_BACKUP, NULL,
 						  /* label, accelerator */ N_("_Backup"), NULL,
 						  /* tooltip */ N_("Make a backup copy of each selected item, placing it in the parent folder with the current date and time appended to its name"), G_CALLBACK(action_backup_callback)},
@@ -10913,6 +11554,7 @@ real_update_menus(NemoView *view)
 	gboolean show_properties;
 	gboolean first_selected_is_pinned;
 	gboolean trash_supported;
+	gboolean appimage_selected;
 
 	selection = nemo_view_get_selection(view);
 	selection_count = g_list_length(selection);
@@ -11178,6 +11820,24 @@ real_update_menus(NemoView *view)
 										 NEMO_ACTION_BACKUP_ARCHIVE);
 	gtk_action_set_sensitive(action, can_duplicate_files);
 	gtk_action_set_visible(action, !selection_contains_recent && !selection_contains_favorites);
+
+	appimage_selected = selection_count == 1 &&
+						!selection_contains_recent &&
+						!selection_contains_favorites &&
+						nemo_file_is_appimage(NEMO_FILE(selection->data));
+
+	action = gtk_action_group_get_action(view->details->dir_action_group,
+										 NEMO_ACTION_APPIMAGE_MAKE_EXECUTABLE);
+	gtk_action_set_visible(action, appimage_selected);
+	gtk_action_set_sensitive(action,
+							 appimage_selected &&
+								 nemo_file_can_set_permissions(NEMO_FILE(selection->data)) &&
+								 !nemo_file_is_executable(NEMO_FILE(selection->data)));
+
+	action = gtk_action_group_get_action(view->details->dir_action_group,
+										 NEMO_ACTION_APPIMAGE_CREATE_SHORTCUT);
+	gtk_action_set_visible(action, appimage_selected);
+	gtk_action_set_sensitive(action, appimage_selected);
 
 	action = gtk_action_group_get_action(view->details->dir_action_group,
 										 NEMO_ACTION_CREATE_LINK);
