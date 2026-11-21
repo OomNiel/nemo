@@ -140,3 +140,16 @@ Packaging
   `share/metainfo`.
 - `debian/rules` — additional `dh_girepository` staging so the build can use the local
   dependency prefix.
+
+Future enhancements
+----
+Ideas discussed but deliberately not implemented yet:
+
+- Extend the two AppImage items to any file Nemo treats as `application/x-executable` (ELF
+  binaries) and to `.run` self-extracting installers, with the icon falling back to the MIME
+  icon.
+- Support `.jar`: create a shortcut whose `Exec=` is `java -jar /path/app.jar`.
+- Optional "desktop shortcut" mode: write the `.desktop` file to `~/Desktop` instead of (or in
+  addition to) `~/.local/share/applications`.
+- Optional preference toggles (GSettings keys + Behaviour checkboxes) for the AppImage items,
+  as the Backup items already have.
